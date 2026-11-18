@@ -1,0 +1,498 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시스템 보안 설계 워크벤치</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 레이아웃: 왼쪽 체크리스트 | 가운데 5x6 설계 매트릭스 | 오른쪽 정책 슬라이더, 아래 줄에 공격 시간과 설정 문구 */
+:root {
+  --bg: #f3f5f7;
+  --panel: #ffffff;
+  --panel-2: #eaeef2;
+  --line: #d3dae1;
+  --fg: #16212b;
+  --muted: #5a6877;
+  --accent: #0b5cad;
+  --accent-soft: #dbe9f7;
+  --good: #1a7a43;
+  --good-soft: #dff1e6;
+  --bad: #b3261e;
+  --bad-soft: #fbe3e1;
+  --warn-soft: #fff0cf;
+  --warn: #8a5a00;
+  --code-bg: #101a24;
+  --code-fg: #d6e2ee;
+  --code-cm: #7f97ad;
+  --font-body: "Noto Sans KR", system-ui, -apple-system, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151c; --panel: #16202a; --panel-2: #1e2b37; --line: #2c3b49;
+    --fg: #e4ebf2; --muted: #93a4b5; --accent: #6db0f2; --accent-soft: #1b3550;
+    --good: #5fd18c; --good-soft: #163626; --bad: #ff8f86; --bad-soft: #43201e;
+    --warn-soft: #3d3114; --warn: #f0c35c;
+    --code-bg: #0a1017; --code-fg: #d6e2ee; --code-cm: #6f879d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151c; --panel: #16202a; --panel-2: #1e2b37; --line: #2c3b49;
+  --fg: #e4ebf2; --muted: #93a4b5; --accent: #6db0f2; --accent-soft: #1b3550;
+  --good: #5fd18c; --good-soft: #163626; --bad: #ff8f86; --bad-soft: #43201e;
+  --warn-soft: #3d3114; --warn: #f0c35c;
+  --code-bg: #0a1017; --code-fg: #d6e2ee; --code-cm: #6f879d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.55;
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+header h1 { margin: 0; font-size: 22px; font-weight: 700; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 80ch; }
+.grid { display: grid; gap: 16px; grid-template-columns: 1fr; align-items: start; }
+.grid > * { min-width: 0; }
+@media (min-width: 1100px) {
+  .top { grid-template-columns: minmax(300px, 1fr) minmax(440px, 1.45fr) minmax(280px, 0.95fr); }
+  .bottom { grid-template-columns: minmax(300px, 1fr) minmax(0, 1.6fr); }
+}
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 14px 16px; }
+.panel h2 { margin: 0 0 2px; font-size: 15px; font-weight: 700; }
+.src { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+h3.grp { margin: 14px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--accent); }
+h3.grp:first-of-type { margin-top: 8px; }
+
+/* 체크리스트 */
+.progress { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+.bar { flex: 1; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--good); transition: width .15s; }
+.chk { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.chk label { display: grid; grid-template-columns: 20px 1fr; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; background: var(--panel); }
+.chk label:has(input:checked) { background: var(--good-soft); border-color: var(--good); }
+.chk input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--good); }
+.chk .t { font-weight: 500; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chk .id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.chk .ok, .chk .ng { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.chk .ng { color: var(--bad); }
+.chk .ok b, .chk .ng b { font-weight: 700; }
+.pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 9px; line-height: 18px; }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+
+/* 매트릭스 */
+.palette { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.palette button, .btn {
+  font: inherit; font-size: 12px; font-weight: 500; color: var(--fg); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.palette button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+:root[data-theme="dark"] .palette button[aria-pressed="true"] { color: #08121c; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .palette button[aria-pressed="true"] { color: #08121c; } }
+.hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; min-height: 1.5em; }
+.tablewrap { overflow-x: auto; }
+table.mx { border-collapse: separate; border-spacing: 3px; width: 100%; min-width: 440px; table-layout: fixed; }
+.mx th { font-size: 11px; font-weight: 700; color: var(--muted); padding: 4px 2px; text-align: center; vertical-align: bottom; }
+.mx thead th.warn { color: var(--warn); background: var(--warn-soft); border-radius: 4px; }
+.mx tbody th { text-align: left; width: 82px; font-size: 12px; color: var(--fg); padding-right: 4px; }
+.mx td { padding: 0; }
+.cell {
+  display: flex; flex-wrap: wrap; align-content: flex-start; gap: 2px; width: 100%; min-height: 54px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 3px; cursor: pointer; font: inherit;
+}
+.cell:hover { border-color: var(--accent); }
+.cell.has { background: var(--accent-soft); border-color: var(--accent); }
+.tag { font-size: 10.5px; line-height: 15px; padding: 0 4px; border-radius: 3px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
+.warnbox { margin-top: 10px; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+.warnbox.ok { background: var(--good-soft); color: var(--good); }
+.warnbox.ng { background: var(--warn-soft); color: var(--warn); }
+.warnbox ul { margin: 0; padding-left: 18px; }
+.row-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+.row-actions span { font-size: 12px; color: var(--muted); }
+
+/* 슬라이더 */
+.sl { padding: 8px 0 10px; border-bottom: 1px solid var(--line); }
+.sl:last-of-type { border-bottom: 0; }
+.sl .hd { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.sl label { font-weight: 500; }
+.sl output { font-family: var(--font-mono); font-weight: 600; font-size: 13px; text-align: right; }
+.sl input[type=range] { width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+.sl .meta { font-size: 11.5px; color: var(--muted); }
+.verdicts { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.verdicts li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; font-size: 13px; }
+.verdicts .why { grid-column: 1 / -1; font-size: 12px; color: var(--muted); margin-top: -2px; }
+
+/* 공격 시간 */
+.atk { display: grid; gap: 10px; }
+.card { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--panel); }
+.card .k { font-size: 12px; color: var(--muted); }
+.card .v { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 2px 0; overflow-wrap: anywhere; }
+.card .s { font-size: 12px; color: var(--muted); }
+.card.danger .v { color: var(--bad); }
+.card.safe .v { color: var(--good); }
+.formula { font-family: var(--font-mono); font-size: 12px; background: var(--panel-2); border-radius: 6px; padding: 8px 10px; overflow-x: auto; white-space: pre; }
+
+/* 설정 문구 */
+.cfghead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cfghead h2 { margin: 0; }
+pre.cfg { margin: 0; background: var(--code-bg); color: var(--code-fg); border-radius: 6px; padding: 12px 14px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; overflow-x: auto; }
+pre.cfg .c { color: var(--code-cm); }
+pre.cfg .hl { color: #ffd479; }
+pre.cfg .bad { color: #ff9a92; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>시스템 보안 설계 워크벤치</h1>
+    <p>요건을 점검하고, 계층×기술영역 매트릭스에 설계 항목을 배치하고, 정책 값을 바꿔 보세요. 판정 기준과 설정 파일은 SPEC.md의 규칙만 따릅니다.</p>
+  </header>
+
+  <div class="grid top">
+    <!-- 왼쪽: 체크리스트 -->
+    <section class="panel" aria-labelledby="h-chk">
+      <h2 id="h-chk">요건 체크리스트 10개</h2>
+      <p class="src">출처: 표 1-6(계정), 표 1-7(비밀번호), 세부학습 1-1. 양호 기준을 충족한 항목에 체크하세요.</p>
+      <div class="progress"><span id="chk-count">0 / 10</span><div class="bar"><i id="chk-bar"></i></div></div>
+      <h3 class="grp">계정 관리 [표 1-6]</h3>
+      <ul class="chk" id="chk-acct"></ul>
+      <h3 class="grp">비밀번호 [표 1-7]</h3>
+      <ul class="chk" id="chk-pw"></ul>
+    </section>
+
+    <!-- 가운데: 매트릭스 -->
+    <section class="panel" aria-labelledby="h-mx">
+      <h2 id="h-mx">설계 매트릭스 5×6</h2>
+      <p class="src">세로 5개 보안 계층 [표 1-21] × 가로 6개 기술영역 [표 1-22]. 설계 항목 6가지 [표 1-5]를 고른 뒤 칸을 눌러 넣거나 뺍니다.</p>
+      <div class="palette" id="palette" role="group" aria-label="넣을 설계 항목"></div>
+      <p class="hint" id="pal-hint"></p>
+      <div class="tablewrap">
+        <table class="mx" id="mx"></table>
+      </div>
+      <div class="warnbox ok" id="mx-warn" role="status"></div>
+      <div class="row-actions">
+        <span>처음 화면의 배치는 예시입니다.</span>
+        <button type="button" class="btn" id="mx-clear">모두 비우기</button>
+      </div>
+    </section>
+
+    <!-- 오른쪽: 슬라이더 -->
+    <section class="panel" aria-labelledby="h-sl">
+      <h2 id="h-sl">정책 값</h2>
+      <p class="src">움직이면 판정, 공격 시간, 설정 문구가 바로 바뀝니다.</p>
+      <div id="sliders"></div>
+      <h3 class="grp">판정 [2장 판정 규칙]</h3>
+      <ul class="verdicts" id="verdicts"></ul>
+    </section>
+  </div>
+
+  <div class="grid bottom">
+    <section class="panel" aria-labelledby="h-atk">
+      <h2 id="h-atk">공격 성공까지 걸리는 시간</h2>
+      <p class="src">평균 시간. 사용자가 정책이 허용하는 가장 짧은 비밀번호를 쓴다고 가정합니다. [1-7]</p>
+      <div class="atk" id="atk"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-cfg">
+      <div class="cfghead">
+        <div>
+          <h2 id="h-cfg">리눅스 설정 문구</h2>
+          <p class="src" style="margin:0">출처: 표 2-1, 2-5~2-9, 그림 1-3 [SPEC 3장]</p>
+        </div>
+        <button type="button" class="btn" id="copy">복사</button>
+      </div>
+      <pre class="cfg" id="cfg" tabindex="0"></pre>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ---------- SPEC 1-1, 1-2: 요건 10개 ----------
+  var ACCT = [
+    ["1-1-1", "기본(Default) 계정 사용 제한", "설치 시 생기는 계정은 비활성화하거나 이름·비밀번호를 바꾼다", "기본 계정을 그대로 사용"],
+    ["1-1-2", "공용 계정 금지", "1인 1계정 원칙", "여러 사람이 한 계정을 공유"],
+    ["1-1-3", "사용자 현행화", "접속 계정 목록을 최소 1일 1회 갱신", "목록 갱신 주기가 1일을 넘거나 갱신하지 않음"],
+    ["1-1-4", "개발자·테스트 계정 삭제", "운영 서버에서는 개발용 계정을 없앤다", "운영 서버에 개발·테스트 계정이 남아 있음"],
+    ["1-1-5", "인사이동·퇴직 처리", "권한 변경·삭제를 절차로 정한다", "절차 없이 계정이 남아 있음"]
+  ];
+  var PW = [
+    ["1-2-1", "복잡도", "2종 조합 10자 이상 또는 3종 조합 8자 이상, 생년월일·전화번호 금지", "기준 미달", "cx"],
+    ["1-2-2", "최초 로그인 시 변경", "임시 비밀번호는 첫 로그인에서 바꾸게 한다", "임시 비밀번호를 계속 사용"],
+    ["1-2-3", "실패 시 잠금", "일정 횟수 틀리면 자동 잠금", "잠금 없음(제한 없음)", "lk"],
+    ["1-2-4", "재사용 제한", "이전 비밀번호를 일정 횟수 이상 다시 쓰지 못하게 한다", "재사용 제한 없음", "rm"],
+    ["1-2-5", "유효기간", "최소 분기 1회 갱신(90일 이내)", "90일을 넘기거나 무기한", "mx"]
+  ];
+
+  // ---------- SPEC 1-3, 1-4: 매트릭스 ----------
+  var ITEMS = [
+    ["계정", "기본 계정 제한, 1인 1계정, 퇴직자 계정 삭제 절차"],
+    ["세션", "로그인~로그아웃 사이의 논리적 연결, 일정 시간 입력이 없으면 끊는다(TMOUT)"],
+    ["접근통제", "DAC(소유자가 ACL로 결정) / MAC(비밀 등급, 소유자도 못 바꿈) / RBAC(직무 역할에 권한 묶음)"],
+    ["권한", "파일·디렉터리 권한 설계, 권한 설계 3원칙 [표 1-19]"],
+    ["로그", "인증·접근 로그 기록과 보관"],
+    ["취약점", "주기적 취약점 점검과 패치"]
+  ];
+  var LAYERS = ["Client", "Network", "Server", "Application", "Data"];
+  var AREAS = ["인증", "접근통제", "암호화", "로깅·감사", "프라이버시", "침해사고 예방·대응"];
+  // 예시 배치: [계층, 영역, 항목]
+  var SEED = [[0,0,0],[2,0,0],[3,0,1],[2,1,2],[2,1,3],[4,1,3],[1,2,5],[4,2,3],[2,3,4],[3,3,4]];
+
+  var mx = {}; // "r,c" -> Set(itemIndex)
+  var active = 0;
+  SEED.forEach(function (s) { toggle(s[0], s[1], s[2], true); });
+
+  function toggle(r, c, i, forceOn) {
+    var k = r + "," + c;
+    if (!mx[k]) mx[k] = {};
+    if (forceOn || !mx[k][i]) mx[k][i] = true; else delete mx[k][i];
+  }
+  function cellItems(r, c) {
+    var o = mx[r + "," + c] || {};
+    return Object.keys(o).map(Number).sort();
+  }
+
+  // ---------- DOM 헬퍼 ----------
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+
+  // ---------- 체크리스트 ----------
+  var badges = {};
+  function buildChecklist(list, ul) {
+    list.forEach(function (it) {
+      var li = el("li");
+      var lab = el("label");
+      var cb = el("input"); cb.type = "checkbox"; cb.id = "chk-" + it[0];
+      cb.addEventListener("change", updateCount);
+      var box = el("div");
+      var t = el("div", "t");
+      t.appendChild(el("span", "id", it[0]));
+      t.appendChild(el("span", null, it[1]));
+      if (it[4]) { var b = el("span", "pill"); t.appendChild(b); badges[it[4]] = b; }
+      box.appendChild(t);
+      var ok = el("span", "ok"); ok.innerHTML = "<b>양호</b> "; ok.appendChild(document.createTextNode(it[2]));
+      var ng = el("span", "ng"); ng.innerHTML = "<b>취약</b> "; ng.appendChild(document.createTextNode(it[3]));
+      box.appendChild(ok); box.appendChild(ng);
+      lab.appendChild(cb); lab.appendChild(box); li.appendChild(lab); ul.appendChild(li);
+    });
+  }
+  buildChecklist(ACCT, $("chk-acct"));
+  buildChecklist(PW, $("chk-pw"));
+  function updateCount() {
+    var n = document.querySelectorAll(".chk input:checked").length;
+    $("chk-count").textContent = n + " / 10";
+    $("chk-bar").style.width = (n * 10) + "%";
+  }
+
+  // ---------- 매트릭스 ----------
+  var pal = $("palette");
+  ITEMS.forEach(function (it, i) {
+    var b = el("button", null, it[0]); b.type = "button"; b.id = "pal-" + i;
+    b.setAttribute("aria-pressed", i === 0 ? "true" : "false");
+    b.addEventListener("click", function () { active = i; renderPalette(); });
+    pal.appendChild(b);
+  });
+  function renderPalette() {
+    ITEMS.forEach(function (_, i) { $("pal-" + i).setAttribute("aria-pressed", i === active ? "true" : "false"); });
+    $("pal-hint").textContent = ITEMS[active][0] + ": " + ITEMS[active][1];
+  }
+  function renderMatrix() {
+    var t = $("mx"); t.innerHTML = "";
+    var thead = el("thead"), hr = el("tr");
+    hr.appendChild(el("th")).setAttribute("scope", "col");
+    // 경고 단위는 기술영역(열) [2-6]
+    var warnAreas = [];
+    AREAS.forEach(function (a, c) {
+      var empty = true;
+      for (var r = 0; r < LAYERS.length; r++) if (cellItems(r, c).length) { empty = false; break; }
+      if (empty) warnAreas.push(a);
+      var th = el("th", empty ? "warn" : "", a); th.scope = "col"; hr.appendChild(th);
+    });
+    thead.appendChild(hr); t.appendChild(thead);
+    var tb = el("tbody");
+    LAYERS.forEach(function (L, r) {
+      var tr = el("tr"); var th = el("th", null, L); th.scope = "row"; tr.appendChild(th);
+      AREAS.forEach(function (a, c) {
+        var td = el("td");
+        var items = cellItems(r, c);
+        var b = el("button", "cell" + (items.length ? " has" : "")); b.type = "button";
+        b.setAttribute("aria-label", L + " × " + a + (items.length ? ": " + items.map(function (i) { return ITEMS[i][0]; }).join(", ") : ": 비어 있음"));
+        items.forEach(function (i) { b.appendChild(el("span", "tag", ITEMS[i][0])); });
+        b.addEventListener("click", function () { toggle(r, c, active); renderMatrix(); });
+        td.appendChild(b); tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    var w = $("mx-warn"); w.innerHTML = "";
+    if (warnAreas.length) {
+      w.className = "warnbox ng";
+      var ul = el("ul");
+      warnAreas.forEach(function (a) { ul.appendChild(el("li", null, "'" + a + "' 영역에 설계 항목이 없습니다")); });
+      w.appendChild(ul);
+    } else {
+      w.className = "warnbox ok";
+      w.textContent = "경고 없음. 모든 기술영역에 설계 항목이 하나 이상 있습니다.";
+    }
+  }
+  $("mx-clear").addEventListener("click", function () { mx = {}; renderMatrix(); });
+
+  // ---------- 슬라이더 (SPEC 2장 입력) ----------
+  var SL = [
+    { id: "minLen",   label: "최소 길이",            min: 4, max: 20,  val: 8,  fmt: function (v) { return v + "자"; }, meta: "4~20" },
+    { id: "classes",  label: "문자 종류 수",         min: 1, max: 4,   val: 3,  fmt: function (v) { return v + "종"; }, meta: "1~4. 1종 소문자, 2종 +대문자, 3종 +숫자, 4종 +특수문자" },
+    { id: "lockout",  label: "잠금 임계값",          min: 0, max: 10,  val: 5,  fmt: function (v) { return v === 0 ? "제한 없음" : v + "회"; }, meta: "0 = 제한 없음, 0~10" },
+    { id: "remember", label: "재사용 제한 횟수",     min: 0, max: 24,  val: 5,  fmt: function (v) { return v === 0 ? "제한 없음" : v + "회"; }, meta: "0 = 제한 없음, 0~24" },
+    { id: "maxDays",  label: "유효기간(최대 사용 기간)", min: 0, max: 365, val: 90, fmt: function (v) { return v === 0 ? "무기한" : v + "일"; }, meta: "0 = 무기한, 0~365" },
+    { id: "minDays",  label: "최소 사용 기간",       min: 0, max: 30,  val: 1,  fmt: function (v) { return v + "일"; }, meta: "0~30" }
+  ];
+  var P = {};
+  var sbox = $("sliders");
+  SL.forEach(function (s) {
+    P[s.id] = s.val;
+    var d = el("div", "sl");
+    var hd = el("div", "hd");
+    var lab = el("label", null, s.label); lab.htmlFor = "sl-" + s.id;
+    var out = el("output"); out.id = "out-" + s.id; out.htmlFor = "sl-" + s.id;
+    hd.appendChild(lab); hd.appendChild(out);
+    var r = el("input"); r.type = "range"; r.id = "sl-" + s.id; r.min = s.min; r.max = s.max; r.step = 1; r.value = s.val;
+    r.addEventListener("input", function () { P[s.id] = parseInt(r.value, 10); update(); });
+    d.appendChild(hd); d.appendChild(r); d.appendChild(el("div", "meta", s.meta));
+    sbox.appendChild(d);
+  });
+
+  // ---------- 판정 (SPEC 2-1 ~ 2-5) ----------
+  function judge() {
+    var p = P;
+    var cx = (p.classes >= 2 && p.minLen >= 10) || (p.classes >= 3 && p.minLen >= 8);
+    var mxd = p.maxDays >= 1 && p.maxDays <= 90;
+    var lk, lkWhy;
+    if (p.lockout === 0) { lk = false; lkWhy = "제한 없음"; }
+    else if (p.lockout <= 5) { lk = true; lkWhy = ""; }
+    else { lk = false; lkWhy = "기준(5회) 초과"; }
+    var rm = p.remember >= 1;
+    var md = p.minDays >= 1;
+    return [
+      { k: "cx", name: "복잡도", ref: "표 1-7", ok: cx, why: cx ? "" : "2종 10자 이상 또는 3종 8자 이상이 아님" },
+      { k: "mx", name: "유효기간", ref: "표 1-7", ok: mxd, why: mxd ? "" : (p.maxDays === 0 ? "무기한" : "90일 초과") },
+      { k: "lk", name: "잠금 임계값", ref: "표 1-7", ok: lk, why: lkWhy },
+      { k: "rm", name: "재사용 제한", ref: "표 1-7", ok: rm, why: rm ? "" : "제한 없음" },
+      { k: "md", name: "최소 사용 기간", ref: "표 2-1", ok: md, why: md ? "" : "0일이면 같은 날 여러 번 바꿔 재사용 제한(remember)을 우회할 수 있음" }
+    ];
+  }
+  function renderVerdicts(res) {
+    var ul = $("verdicts"); ul.innerHTML = "";
+    res.forEach(function (r) {
+      var li = el("li");
+      li.appendChild(el("span", null, r.name + " [" + r.ref + "]"));
+      li.appendChild(el("span", "pill " + (r.ok ? "good" : "bad"), r.ok ? "양호" : "취약"));
+      if (r.why) li.appendChild(el("span", "why", r.why));
+      ul.appendChild(li);
+      var b = badges[r.k];
+      if (b) { b.className = "pill " + (r.ok ? "good" : "bad"); b.textContent = "설정: " + (r.ok ? "양호" : "취약"); }
+    });
+  }
+
+  // ---------- 공격 시간 (SPEC 1-7) ----------
+  var NSET = { 1: 26, 2: 52, 3: 62, 4: 94 };
+  var OFFLINE = 1e10;
+  function fmtTime(sec) {
+    function n(x) { return x >= 10 ? Math.round(x).toLocaleString("ko-KR") : (Math.round(x * 10) / 10).toLocaleString("ko-KR"); }
+    if (sec < 60) return n(sec) + "초";
+    var min = sec / 60; if (min < 60) return n(min) + "분";
+    var h = min / 60; if (h < 24) return n(h) + "시간";
+    var d = h / 24; if (d < 365) return n(d) + "일";
+    var y = d / 365; if (y >= 1e9) return "10억 년 이상";
+    return n(y) + "년";
+  }
+  function renderAttack() {
+    var N = NSET[P.classes], L = P.minLen;
+    var avg = Math.pow(N, L) / 2;
+    var off = avg / OFFLINE;
+    var onRate = P.lockout === 0 ? 100 : P.lockout / 600;
+    var on = avg / onRate;
+    var box = $("atk"); box.innerHTML = "";
+    function card(k, v, s, cls) {
+      var c = el("div", "card " + cls);
+      c.appendChild(el("div", "k", k)); c.appendChild(el("div", "v", v)); c.appendChild(el("div", "s", s));
+      box.appendChild(c);
+    }
+    var yrs = off / 86400 / 365;
+    card("오프라인 공격 (해시 파일을 탈취해 자기 컴퓨터에서 계산)", fmtTime(off),
+      "초당 1e10회 가정. 잠금 임계값의 영향을 받지 않습니다.", off < 86400 ? "danger" : (yrs >= 1 ? "safe" : ""));
+    var onS = P.lockout === 0 ? "잠금 없음: 초당 100회 가정" : "잠금 " + P.lockout + "회: 600초마다 " + P.lockout + "회, 초당 " + (P.lockout / 600).toFixed(4).replace(/0+$/, "") + "회";
+    card("온라인 공격 (로그인 창에 직접 입력)", fmtTime(on), onS, on < 86400 ? "danger" : "safe");
+    var f = el("div", "formula");
+    f.textContent = "평균 공격 시간(초) = (N^L / 2) ÷ 초당 시도 횟수\nN = " + N + " (" + P.classes + "종), L = " + L + "\nN^L / 2 ≈ " + avg.toExponential(2);
+    box.appendChild(f);
+  }
+
+  // ---------- 설정 문구 (SPEC 3장) ----------
+  var cfgText = "";
+  function renderConfig() {
+    var p = P;
+    var maxd = p.maxDays === 0 ? 99999 : p.maxDays;
+    var lines = [
+      ["c", "# /etc/login.defs"],
+      ["", "PASS_MIN_DAYS " + p.minDays],
+      ["", "PASS_MAX_DAYS " + maxd],
+      ["", "PASS_MIN_LEN " + p.minLen],
+      ["", "PASS_WARN_AGE 7"],
+      ["", ""],
+      ["c", "# /etc/security/pwquality.conf (pam_pwquality)"],
+      ["", "minlen = " + p.minLen],
+      ["", "minclass = " + p.classes],
+      ["", ""],
+      ["c", "# /etc/security/faillock.conf (pam_faillock)"],
+      p.lockout === 0 ? ["bad", "# deny 미설정 — 잠금 없음(취약)"] : ["", "deny = " + p.lockout],
+      ["", "unlock_time = 600"],
+      ["", ""],
+      ["c", "# /etc/pam.d/common-password (pam_pwhistory)"],
+      ["", "password required pam_pwhistory.so remember=" + p.remember + " use_authtok"],
+      ["", ""],
+      ["c", "# /etc/ssh/sshd_config"],
+      ["", "PermitRootLogin no"],
+      ["", ""],
+      ["c", "# /etc/profile (세션 타임아웃)"],
+      ["", "TMOUT=600"],
+      ["", "export TMOUT"]
+    ];
+    cfgText = lines.map(function (l) { return l[1]; }).join("\n");
+    var pre = $("cfg"); pre.innerHTML = "";
+    lines.forEach(function (l, i) {
+      var s = el("span", l[0], l[1]);
+      pre.appendChild(s);
+      if (i < lines.length - 1) pre.appendChild(document.createTextNode("\n"));
+    });
+  }
+  $("copy").addEventListener("click", function () {
+    var btn = $("copy");
+    function done(msg) { btn.textContent = msg; setTimeout(function () { btn.textContent = "복사"; }, 1500); }
+    function fallback() {
+      var r = document.createRange(); r.selectNodeContents($("cfg"));
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      done("선택됨. Ctrl+C");
+    }
+    try {
+      navigator.clipboard.writeText(cfgText).then(function () { done("복사됨"); }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  // ---------- 갱신 ----------
+  function update() {
+    SL.forEach(function (s) { $("out-" + s.id).textContent = s.fmt(P[s.id]); });
+    renderVerdicts(judge());
+    renderAttack();
+    renderConfig();
+  }
+  renderPalette();
+  renderMatrix();
+  updateCount();
+  update();
+})();
+</script>
